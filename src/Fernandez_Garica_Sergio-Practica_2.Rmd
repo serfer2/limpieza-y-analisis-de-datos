@@ -3,6 +3,9 @@ title: 'Tipología y ciclo de vida de datos: Práctica 2 - Limpieza y análisis'
 author: "Autor: Sergio Fernández García"
 date: "Enero 2020"
 output:
+  pdf_document:
+    highlight: zenburn
+    toc: yes
   html_document:
     highlight: default
     number_sections: yes
@@ -11,9 +14,6 @@ output:
     toc_depth: 3
     includes:
       in_header: header.html
-  pdf_document:
-    highlight: zenburn
-    toc: yes
   word_document: default
 ---
 
