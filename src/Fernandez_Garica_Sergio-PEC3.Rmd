@@ -1,0 +1,444 @@
+---
+title: 'Tipología y ciclo de vida de datos: Práctica 2 - Limpieza y análisis'
+author: "Autor: Sergio Fernández García"
+date: "Enero 2020"
+output:
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+    includes:
+      in_header: header.html
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+  word_document: default
+---
+
+<style type="text/css">
+  h1, h2 {
+    font-size: 14pt;
+    color: #000078;
+  }
+</style>
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(eval=T, echo=T)
+if(!require(VIM)){
+    install.packages('VIM', repos='http://cran.us.r-project.org')
+    library(VIM)
+}
+if(!require(nortest)){
+    install.packages('nortest', repos='http://cran.us.r-project.org')
+    library(nortest)
+}
+if(!require(psych)){
+    install.packages('psych', repos='http://cran.us.r-project.org')
+    library(psych)
+}
+if(!require(GGally)){
+    install.packages('GGally', repos='http://cran.us.r-project.org')
+    library(GGally)
+}
+if(!require(ggplot2)){
+    install.packages('ggplot2', repos='http://cran.us.r-project.org')
+    library(ggplot2)
+}
+if(!require(grid)){
+    install.packages('grid', repos='http://cran.us.r-project.org')
+    library(grid)
+}
+if(!require(magrittr)){
+    install.packages('magrittr', repos='http://cran.us.r-project.org')
+    library(magrittr)
+}
+if(!require(dplyr)){
+    install.packages('dplyr', repos='http://cran.us.r-project.org')
+    library(dplyr)
+}
+```
+
+<br>
+
+# Descripción del dataset. ¿Por qué es importante y qué pregunta/problema pretende responder?
+
+Cada registro del dataset contiene información de un pasajero que viajaba en el Titanic.  
+En las variables se caracteriza si sobrevivió, sexo, edad, en qué categoría viajaba o si viajaba con familiares, etc ...
+
+Las variables son las siguientes:
+
+: Dataset Variablesariables
+
+| Variable    |            Definition                |                      Keys                |
+|-------------|--------------------------------------|------------------------------------------|
+| PassengerId | Id del registro                      |                                          |
+| Survived    | Supervivencia (si o no)              | 0 = No, 1 = Si                           |
+| Pclass      | Clase del pasaje                     | 1 = 1st, 2 = 2nd, 3 = 3rd                |
+| Name        | Nombre de la persona                 |                                          |
+| Sex         | Sexo de la persona                   |                                          |
+| Age         | Edad, en años                        |                                          |
+| SibSp       | Cantidad Hermanos / cónyuges a bordo |                                          |
+| Parch       | Cantidad padres o hijos a bordo      |                                          |
+| Ticket      | Número de ticket                     |                                          |
+| Fare        | Tarifa                               |                                          |
+| Cabin       | Cabina                               |                                          |
+| Embarked    | Lugar de embarque                    | C=Cherbourg, Q=Queenstown, S=Southampton |
+
+El propósito del presente dataset es tratar de construir un modelo de ML capaz de predecir cuales pasajeros sobreviven o mueren, en función de las varaibles descritas.  
+
+<br>
+
+# Integración y selección de los datos de interés a analizar.
+
+```{r message=FALSE, warning=FALSE}
+df<-read.csv("./titanic.csv", header=T, sep=",")
+str(df)
+```
+
+A priori, vemos que hay varias variables que no aportan información útil en cuanto a supervivencia.  
+Las variables a descartar, serán:
+
+ - PassengerId
+ - Name
+ - Ticket
+ - Fare
+ - Cabin
+ - Embarked
+ 
+Por lo tanto, seleccionamos las siguientes variables:
+
+ - Pclass
+ - Sex
+ - Age
+ - SibSp
+ - Parch
+ 
+Eliminamos del dataframe las variables que no vamos a usar:
+
+```{r, eval=TRUE, echo=TRUE}
+df$PassengerId <- NULL
+df$Name <- NULL
+df$Ticket <- NULL
+df$Fare <- NULL
+df$Cabin <- NULL
+df$Embarked <- NULL
+
+summary(df)
+```
+
+<br>
+
+# Limpieza de los datos
+
+## ¿Los datos contienen ceros o elementos vacíos? ¿Cómo gestionarías cada uno de estos casos?
+
+Hacemos una exploración visual inicial del csv y vemos que los datos nulos simplemente se han dejado vacíos. Analizamos los valores de las distintas varaibles en busca de elementos vacíos.  
+
+```{r, eval=TRUE, echo=TRUE}
+sapply(df, function(x) sum(is.na(x)))
+```
+
+La variable `Age` va a suponer un problema. De un total de 890 registros, tenemos 177 vacíos. Esto supone casi un 20% de los registros.  
+Intuimos que se trata de una variable importante, en lo referente a la supervivencia. Pero aliminar casi un 20% de los registros del dataset es demasiado. Voy a optar por rellenar los datos faltantes de la variable `Age` usando K-nearest neighbor (KNN).
+
+```{r, eval=TRUE, message=FALSE, warning=FALSE}
+require(laeken)
+require(VIM)
+df$Age <- kNN(df)$Age
+sapply(df, function(x) sum(is.na(x)))
+```
+
+## Identificación y tratamiento de valores extremos.
+
+Por el tipo de dato que contienen, los valoers extremos podrián darse en las variables: `Age`, `SibSp` y `Parch`. Las analizamos con un boxplot.
+
+```{r, eval=TRUE, echo=TRUE}
+boxplot(df$Age, main="Age", col="grey")
+boxplot(df$SibSp, main="SibSp", col="grey")
+boxplot(df$Parch, main="Parch", col="grey")
+```
+
+Se puede apreciar que los valores no son *outliers*, simplemente son valores poco frecuentes, pero perfectamente válidos. Voy a optar por mantenerlos sin modificarlos.
+
+<br>
+
+# Análisis de los datos.
+
+## Selección de los grupos de datos que se quieren analizar/comparar (planificación de los análisis a aplicar).
+
+Antes de analizar los datos, convertimos los valores lógicos y categóricos en numéricos, para poder calcular correlaciones. Solo será nacesario convertir la variable `Sex`.  
+
+
+```{r, eval=TRUE, echo=TRUE}
+data <- df
+data$Sex <- ifelse(data$Sex == 'female', 0, 1)
+```
+
+Dada la naturaleza del problema, es fácil suponer que durante el naufragio se pudo dar preferencia a las personas de sexo femenino y a las personas de corta edad. Así mismo, podemos suponer que las personas con más nivel económico (pasajes de 1ª clase) pudieron tener algún tipo de trato de favor.
+
+Es por ello que los grupos que considero interesantes analizar son:
+
+```{r, eval=TRUE, echo=TRUE}
+menores <- data[data$Age < 12,]  # Pre-adolescentes
+mujeres <- data[data$Sex == 0,]
+primera_clase <- data[data$Pclass == 1,]
+```
+
+Podemos echar un vistazo, incluso antes de aplicar las pruebas estadísticas.
+
+```{r, eval=TRUE, echo=TRUE}
+pie(table(data$Survived), main=' Supervivencia (General)')
+pie(table(menores$Survived), main=' Supervivencia entre menores')
+pie(table(mujeres$Survived), main=' Supervivencia entre mujeres')
+pie(table(primera_clase$Survived), main=' Supervivencia pasajeros 1a clase')
+```
+
+Como complemento a los datos que tenemos en el dataset, vamos a añadir algunas columnas con datos pre-procesados para tratar de mejorar la predicción.
+
+```{r, eval=TRUE, echo=TRUE}
+data$IsWoman <- ifelse(data$Sex == 0, 1, 0)
+data$IsChild <- ifelse(data$Age < 12, 1, 0)
+data$IsRich <- ifelse(data$Pclass == 1, 1, 0)
+```
+
+## Comprobación de la normalidad y homogeneidad de la varianza.
+
+Comprobamos si las variables, que nos interesan, siguen una distribución normal. Para ello, aplicaremos la prueba de Anderson-Darling.
+
+```{r, eval=TRUE, echo=TRUE}
+anderson_darling <- function(dataset) {
+  
+  alpha = 0.05
+  col.names = colnames(dataset)
+  cat("Variables que no siguen una distribución normal:\n")
+  
+  for (i in 1:ncol(dataset)) {
+    if (is.integer(dataset[,i]) | is.numeric(dataset[,i])) {
+      p_val = ad.test(dataset[,i])$p.value
+      if (p_val < alpha) {
+        cat(col.names[i])
+        # Format output
+        if (i < ncol(dataset) - 1) {
+          cat(", ")
+        }
+        if (i %% 6 == 0) {
+          cat("\n")
+        }
+      }
+    }
+  }
+}
+
+anderson_darling(data)
+```
+
+```{r, eval=TRUE, echo=TRUE}
+fligner.test(Survived ~ Pclass, data = data)
+fligner.test(Survived ~ Age, data = data)
+fligner.test(Survived ~ Sex, data = data)
+fligner.test(Survived ~ SibSp, data = data)
+fligner.test(Survived ~ Parch, data = data)
+fligner.test(Survived ~ IsWoman, data = data)
+fligner.test(Survived ~ IsChild, data = data)
+fligner.test(Survived ~ IsRich, data = data)
+```
+
+Consideramos que la varianza de dos variables es homogénea cuando el valor de `p-value > 0.05`.  
+Parece que las variables, cuya varianza es homogénea con la de la Supervivencia son las de la edad (`Age`) y la de la riquieza (`IsRich`).
+
+## Aplicación de pruebas estadísticas para comparar los grupos de datos. En función de los datos y el objetivo del estudio, aplicar pruebas de contraste de hipótesis, correlaciones, regresiones, etc. Aplicar al menos tres métodos de análisis diferentes.
+
+Antes de aplicar las pruebas estadíasticas, normalizamos los valores de las diferentes variables para poder compararlas.
+
+```{r, eval=TRUE, echo=TRUE}
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+
+normalized_data <- normalize(data)
+```
+
+### Cálculo de la correlación entre variables
+
+Primero calculamos la matriz de correlación.
+
+```{r, eval=TRUE, echo=TRUE}
+cor(normalized_data, method = "spearman")
+```
+
+Los resultados de correlación entre variables son más visibles usando una tabla con colores.
+
+```{r, eval=TRUE, echo=TRUE}
+ggcorr(normalized_data[,c(1:9)], name = "corr", label = TRUE)+
+  theme(legend.position="none")+
+labs(title="Correlaciones")+
+theme(plot.title=element_text(face='bold', color='black', hjust=0.5, size=12))
+```
+
+Parece que las variables más correlacionadas con la `Survived` son `IsWoman` e `IsRich`, lo cual parece que tiene bastante lógica si prestamos atención a las gráficas del punto 4.1.
+
+### Contraste de hipótesis de dos muestras sobre la diferencia de medias
+
+Supongamos una hipótesis $H_0$ y su hipótesis alternativa $H_1$, con un $\alpha=0.05$. Siendo $\mu_1$ la media que se extrae de la primera muestra y $\mu_2$ la media de la segunda muestra, describimos el contraste de hipótesis como:  
+
+$$H_0: \mu_1-\mu_2=0$$
+$$H_1: \mu_1-\mu_2<0$$
+Aplicando el contraste de hipótesis que acabamos de describir, daremos por válida una hipótesis cuando el `p-value` obtenido sea mayor ue el valor de significancia ($\alpha$).
+
+#### Contraste de hipótesis: supervivencia segmentando por sexos (hombres *vs* mujeres).
+
+- Aplicamos el Contraste de Hipótersis a dos muestras obtenidas segmentando por sexos. Pretendemos averiguar si el hecho de ser hombre implica una mayor supervivencia en el naufragio:
+
+```{r, eval=TRUE, echo=TRUE}
+mujeres <- data[data$IsWoman == 1,]
+hombres <- data[data$IsWoman == 0,]
+t.test(hombres$Survived, mujeres$Survived, alternative="less")
+```
+
+Dado que `p-value < 0.05`, **rechazamos la hipótesis** y damos por buena la hipótesis nula, lo cual quiere decir que las mujeres tienen más probabilidades de supervivencia.
+
+#### Contraste de hipótesis: supervivencia segmentando por edades (niños *vs* mayores).
+
+- Aplicamos el Contraste de Hipótersis a dos muestras obtenidas segmentando por edades. Pretendemos averiguar si el hecho de ser niño/a (menor de 12 años) implica una mayor supervivencia en el naufragio:
+
+```{r, eval=TRUE, echo=TRUE}
+menores <- data[data$IsChild == 1,]
+mayores <- data[data$IsChild == 0,]
+t.test(menores$Survived, mayores$Survived, alternative="less")
+```
+
+Dado que `p-value > 0.05`, **aceptamos la hipótesis**, lo cual quiere decir que los menores de 12 años tienen más probabilidades de supervivencia.
+
+#### Contraste de hipótesis: supervivencia segmentando por clase del pasaje (1ª clase *vs* "el resto").
+
+- Aplicamos el Contraste de Hipótersis a dos muestras obtenidas segmentando por clase de pasaje. Pretendemos averiguar si el hecho de viajar en primera clase implica una mayor supervivencia en el naufragio:
+
+```{r, eval=TRUE, echo=TRUE}
+first_class <- data[data$IsRich == 1,]
+other_classes <- data[data$IsRich == 0,]
+t.test(first_class$Survived, other_classes$Survived, alternative="less")
+```
+
+Dado que `p-value > 0.05`, **aceptamos la hipótesis**. Lo cual quiere decir que los viajeros de primera clase tienen más probabilidades de supervivencia que el resto del pasaje.
+
+### Modelo de regresión Lineal
+
+Vamos a tratar de obtener un modelo de regresión lineal que nos permita, dados unos atributos de pasajero, determinar si hubiese sobrevivido o no, durante el naufragio.
+
+A priori, desconocemos la combinación idónea de regresores. Es por ello que vamos a formular varios modelos de regresión lineal, con distintas combinaciones de regresores.  
+Después de cada uno de ellos y elegiremos aquel que presente un mayor coeficiente de determinación ($R²$).
+
+No vamos a hacer una gran cantidad de modelos con todas las combinaciones de regresores. Elegiremos las variables que mayor grado de correlación hayan presentado con respecto a `Survived`. Basta con echar un vistazo a la tabla coloreada del punto *4.3.1*.
+
+```{r, eval=TRUE, echo=TRUE}
+first_class = data$IsRich
+child = data$IsChild
+sex = data$Sex
+parent = data$Parch
+
+# Modelos Lineales
+alive <- data$Survived
+m01 <- lm(alive ~ first_class,                        data=data)
+m02 <- lm(alive ~ child,                              data=data)
+m03 <- lm(alive ~ sex,                                data=data)
+m04 <- lm(alive ~ parent,                             data=data)
+m05 <- lm(alive ~ first_class + sex,                  data=data)
+m06 <- lm(alive ~ first_class + child,                data=data)
+m07 <- lm(alive ~ first_class + parent,               data=data)
+m08 <- lm(alive ~ first_class + sex + child,          data=data)
+m09 <- lm(alive ~ first_class + sex + child + parent, data=data)
+m10 <- lm(alive ~ sex + child,                        data=data)
+m11 <- lm(alive ~ sex + parent,                       data=data)
+m12 <- lm(alive ~ sex + child + parent,               data=data)
+m13 <- lm(alive ~ child + parent,                     data=data)
+m14 <- lm(alive ~ child + parent + first_class,       data=data)
+m15 <- lm(alive ~ parent + child + first_class,       data=data)
+m16 <- lm(alive ~ parent + sex + first_class,         data=data)
+m17 <- lm(alive ~ Pclass + SibSp + Parch + Age + Sex, data=data)
+
+coef_table <- matrix(
+  c(
+    1,  summary(m01)$r.squared,
+    2,  summary(m02)$r.squared,
+    3,  summary(m03)$r.squared,
+    4,  summary(m04)$r.squared,
+    5,  summary(m05)$r.squared,
+    6,  summary(m06)$r.squared,
+    7,  summary(m07)$r.squared,
+    8,  summary(m08)$r.squared,
+    9,  summary(m09)$r.squared,
+    10, summary(m10)$r.squared,
+    11, summary(m11)$r.squared,
+    12, summary(m12)$r.squared,
+    13, summary(m13)$r.squared,
+    14, summary(m14)$r.squared,
+    15, summary(m15)$r.squared,
+    16, summary(m16)$r.squared,
+    17, summary(m17)$r.squared
+  ),
+  ncol = 2, 
+  byrow = TRUE
+)
+colnames(coef_table) <- c("Modelo", "R^2")
+coef_table
+```
+
+Los resultados de los *coeficientes de determinación* ($R²$) obtenidos para los diferentes modelos, no son demasiado buenos.  
+El mejor de ellos el el correspondiente al modelo 17. Este modelo está formado por los regresores *Pclass*, *SibSp*, *Parch*, *Age* y *Sex*. Con $R²=0.4$ aprox., lo cual no parece un buen resultado.  
+
+<br>
+
+# Representación de los resultados a partir de tablas y gráficas.
+
+No hemos podido obtener un modelo de regresión lineal con un buen, *coeficiente de determinación* ($R²$). Pero hemos podido ver que algunas variables son más importantes que ortras para predecir la supervivencia de un pasajero.  
+Estas variables son el sexo (*Sex*), la clase del pasaje (*Pclass*) y en menor medida, la edad (*Age*).
+
+Veamos, mediante unas gráficas, la relación de estas variables con `Survived`.
+
+```{r, eval=TRUE, echo=TRUE}
+# preparamos los datos en forma de tabla para plotear las gráficas
+tabla_SST <- table(df$Sex, df$Survived)
+tabla_SCT <- table(df$Pclass, df$Survived)
+data$IsChildStr <- ifelse(data$IsChild == 1, 'Child', 'Adult')
+tabla_SAT <- table(data$IsChildStr, df$Survived)
+
+par(mfrow=c(1, 3))
+plot(tabla_SCT, col = c("black","#008000"), main = "SURVIVED vs. CLASS")
+plot(tabla_SAT, col = c("black","#008000"), main = "SURVIVED vs. AGE")
+plot(tabla_SST, col = c("black","#008000"), main = "SURVIVED vs. SEX")
+```
+
+Las gráficas anteriores dan una imagen clara de cuales son los valores de las variables que, en mayor medida, aumentan las probabilidades de supervivencia.
+
+Combinando los valores de las dos variables con más peso, obtendríamos la combinación más favorable (mujeres que viajan en primera clase):
+
+```{r, eval=TRUE, echo=TRUE}
+first_class_girls <- data %>% filter(IsWoman == 1, IsRich == 1)
+ggplot(data=first_class_girls, aes(x=Survived, fill=IsChildStr)) + geom_bar()
+table(first_class_girls$Survived, first_class_girls$IsChildStr)
+```
+
+Como podemos ver, la gran mayoría de las mujeres de 1ª clase lograron sobrevivir.
+
+<br>
+
+# Resolución del problema. A partir de los resultados obtenidos, ¿cuáles son las conclusiones? ¿Los resultados permiten responder al problema?
+
+A la vista de los resultados obtenidos, las principales conclusiones que podemos sacar son:
+
+ - Las variables con más peso a la hora de predecir la supervivencia son: `Pclass`, `Sex` y `Age`.
+ - Los modelos de regresión lineal no son apropiados para realizar modelos predictivos con este dataset. El mejor de ellos tiene un *coeficiente de determinación* de $R²\simeq0.4$.
+ - A pesar de que no hemos obtenido un modelo de regresión lineal con buena capacidad predictiva, hemos podido determinar algunas combinaciones de variables que arrojan una probabilidad de supervivencia bastante alta.
+ 
+**NOTA:**
+
+Para construir un modelo con buenas capacidades de predicción para este dataset, una buena elección podría ser un árbol de decisión. Probablemente tendríamos una mejor tasa de acierto.
+
+<br>
+
+
+
+
+
